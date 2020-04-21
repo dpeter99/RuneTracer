@@ -64,14 +64,26 @@ inline float pow2(float n)
 	return n * n;
 }
 
-inline mat4 dot(const vec3 & P, const mat4& A)
+inline float dot(vec4 a, vec4 b)
 {
-	return mat4(
-		vec4(A.rows[0].x * P.x * P.x,	A.rows[0].y * P.x * P.y,	A.rows[0].z * P.x * P.z,	A.rows[0].w * P.x),
-		vec4(A.rows[1].x * P.y * P.x,	A.rows[1].y * P.y * P.y,	A.rows[1].z * P.y * P.z,	A.rows[1].w * P.y),
-		vec4(A.rows[2].x * P.z * P.x,	A.rows[2].y * P.z * P.y,	A.rows[2].z * P.z * P.z,	A.rows[2].w * P.z),
-		vec4(A.rows[3].x * P.x,		A.rows[3].y * P.y,		A.rows[3].z * P.z,		A.rows[3].w * 1.0f)
+	return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+}
+
+inline float dot(vec3 a, vec4 b)
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z + 1.0f * b.w;
+}
+
+inline vec4 dot(const mat4& A, const vec3& P)
+{
+	auto vec = vec4(
+		A.rows[0].x * P.x + A.rows[0].y * P.y + A.rows[0].z * P.z + A.rows[0].w * 1.0f,
+		A.rows[1].x * P.x + A.rows[1].y * P.y + A.rows[1].z * P.z + A.rows[1].w * 1.0f,
+		A.rows[2].x * P.x + A.rows[2].y * P.y + A.rows[2].z * P.z + A.rows[2].w * 1.0f,
+		A.rows[3].x * P.x + A.rows[3].y * P.y + A.rows[3].z * P.z + A.rows[3].w * 1.0f
 	);
+
+	return vec;
 }
 
 
@@ -305,7 +317,7 @@ class HitInfo
 {
 public:
 	int hit_count = 0;
-	
+
 	Ray ray;
 	float t;
 	Shape* shape = NULL;
@@ -356,17 +368,17 @@ public:
 class RuntimeResource : public SHObject
 {
 	SHObject_Base(RuntimeResource)
-	
+
 public:
-	
+
 	RuntimeResource()
 	{
 
 	}
-	
+
 	virtual ~RuntimeResource()
 	{
-		
+
 	}
 };
 
@@ -379,7 +391,7 @@ public:
 	{
 
 	}
-	
+
 	/// <summary>
 	/// Fully calculates and fills in the provided hit info object
 	/// </summary>
@@ -401,7 +413,7 @@ class Plane : public Shape
 {
 	SHObject_Base(Plane)
 
-	vec3 origin;
+		vec3 origin;
 	vec3 normal;
 
 public:
@@ -567,37 +579,75 @@ class Hyperboloid : public Shape
 	SHObject_Base(Hyperboloid)
 
 		mat4 A;
-	
+
 
 public:
 	Hyperboloid(float k)
 	{
 		float a = +1;
-		float b = +1;
-		float c = -1;
+		float b = -1;
+		float c = +1;
 		float d = -k;
-		
+
 		A.rows[0].x = a;
 		A.rows[1].y = b;
 		A.rows[2].z = c;
 		A.rows[3].w = d;
 	}
 
+	vec2 calculteT(vec3 D, vec3 C)
+	{
+		float a = dot(D, dot(A, D));
+		float b = dot(C, dot(A, D)) + dot(D, dot(A, C));
+		float c = dot(C, dot(A, C));
+
+		float discr = b * b - 4 * a * c;
+		if (discr < 0) return false;
+
+		discr = sqrtf(discr);
+
+		vec2 res;
+		
+		res.x = (-b - discr) / 2 / a;
+		res.y = (-b + discr) / 2 / a;
+
+		return res;
+	}
 
 	bool calculateHit(HitInfo& hitInfo) override
 	{
-		
-		float a = dot(hitInfo.ray.direction,A);
-		float b = pow2(hitInfo.position.y) / b2;
-		float c = pow2(hitInfo.position.z) / c2;
-		
-		float r = xa + yb - zc;
+		auto D = hitInfo.ray.direction;
+		auto C = hitInfo.ray.origin;
 
-		if(r != 1)
+		auto res = calculteT(D, C);
+		
+		float t;
+		// First check if close intersection is valid
+		if (res.x > RAY_T_MIN && res.x < hitInfo.t)
 		{
+			t = res.x;
+		}
+		else if (res.y > RAY_T_MIN && res.y < hitInfo.t)
+		{
+			t = res.y;
+		}
+		else
+		{
+			// Neither is valid
 			return false;
 		}
 
+		vec3 point = hitInfo.ray.getPoint(hitInfo.t);
+		
+		if(point.x > 3)
+		{
+			return false;
+		}
+		else
+		{
+			hitInfo.t = t;
+		}
+		
 		// Finish populating intersection
 		hitInfo.shape = this;
 		//shitInfo.color = vec3(1,0,0);
@@ -610,25 +660,50 @@ public:
 
 	bool doesHit(const Ray& ray) override
 	{
-		return true;
+		auto D = ray.direction;
+		auto C = ray.origin;
+
+
+		float a = dot(D, dot(A, D));
+		float b = dot(C, dot(A, D)) + dot(D, dot(A, C));
+		float c = dot(C, dot(A, C));
+
+		float discr = b * b - 4 * a * c;
+		if (discr < 0) return false;
+
+		discr = sqrtf(discr);
+
+		float t1 = (-b - discr) / 2 / a;
+		float t2 = (-b + discr) / 2 / a;
+
+		// First check if close intersection is valid
+		if (t1 > RAY_T_MIN && t1 < ray.tMax)
+		{
+			return true;
+		}
+		else if (t2 > RAY_T_MIN && t2 < ray.tMax)
+		{
+			return true;
+		}
+		return false;
 	};
 };
 
 #pragma endregion
 
 
-class Material: public RuntimeResource
+class Material : public RuntimeResource
 {
 	vec3 color;
 
-	vec3 kd = vec3(1,1,1);
+	vec3 kd = vec3(1, 1, 1);
 	vec3 ks;
 	vec3 ka;
 
 	float shiny;
 
 	float n;
-	
+
 	enum  MaterialType
 	{
 		Diffuse,
@@ -636,7 +711,7 @@ class Material: public RuntimeResource
 	};
 
 	MaterialType type;
-	
+
 public:
 	Material(vec3 col, float s) :
 		color(col)
@@ -660,8 +735,8 @@ public:
 		float R0 = pow2((n - n2) / (n + n2));
 		return R0 + (1 - R0) * (1 - cos(dot));
 	}
-	
-	
+
+
 	vec3 calculateColor(HitInfo& hit);
 };
 
@@ -692,7 +767,7 @@ class Renderer : public Entity
 	SHObject_Base(Renderer)
 
 		Shape* shape;
-		Material* mat;
+	Material* mat;
 public:
 
 	Renderer(Shape* s, Material* m) : shape(s), mat(m)
@@ -705,28 +780,28 @@ public:
 	bool calculateHit(OUT HitInfo& hitInfo)
 	{
 		Ray og_ray = hitInfo.ray;
-		
+
 		hitInfo.ray.origin = hitInfo.ray.origin - pos;
 
 		//see if the ray actually hits us.
 		bool res = shape->calculateHit(hitInfo);
 
 		hitInfo.ray = og_ray;
-		
+
 		if (res) {
 			//hitInfo.t = localHitInfo.t;
 			//hitInfo.depth = distance(hitInfo.ray.origin, hitInfo.ray.getPoint(hitInfo.t));
 			//hitInfo.normal = localHitInfo.normal;
 
-			
+
 			hitInfo.position = hitInfo.position + pos;
 
 			vec3 color = mat->calculateColor(hitInfo);
 			hitInfo.color = color;
 		}
 
-		
-		
+
+
 
 		return res;
 	};
@@ -769,7 +844,14 @@ public:
 		w = 2;
 	}
 
-	void init(Scene* scene) override{};
+	void init(Scene* scene) override {};
+
+	void lookAt(vec3 target)
+	{
+		forward = normalize(target - pos);
+		right = normalize(cross(forward, CoordinateSystem::Up ));
+		up = cross(right, forward);
+	}
 	
 	Ray makeRay(vec2 point) const
 	{
@@ -901,7 +983,7 @@ public:
 		{
 			converted.emplace_back(vec4(data[i].x, data[i].y, data[i].z, 0));
 		}
-		
+
 		glBindTexture(GL_TEXTURE_2D, output.textureId);    // binding
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_FLOAT, converted.data()); // To GPU
 	}
@@ -920,7 +1002,7 @@ class RendererSystem
 
 	//static RendererSystem* Instance;
 	Buffer target = Buffer(windowWidth, windowHeight);
-	
+
 	std::vector<Renderer*> renderers;
 	std::vector<Light*> lights;
 
@@ -946,13 +1028,13 @@ public:
 
 	void renderScene()
 	{
-		if(scene->getMainCam() == nullptr)
+		if (scene->getMainCam() == nullptr)
 		{
 			printf("There is no camera registered to the scene. Can't render it");
 			return;
 		}
 
-		
+
 		consoleHeader(target);
 
 		//std::ofstream myfile;
@@ -963,7 +1045,7 @@ public:
 
 		int endX = target.getWidth();
 		int endY = target.getHeight();
-		
+
 		for (size_t y = startY; y < endY; y++)
 		{
 			consoleLineStart(y);
@@ -1004,20 +1086,20 @@ public:
 
 	Texture& display()
 	{
-		
+
 		target.updateTexture();
 		return target.getTexture();
 	}
 
-	
+
 
 	bool trace(HitInfo& hit)
 	{
 		if (hit.hit_count >= TRACE_MAX_ITERATION)
 			return false;
-		
+
 		bool intersects = false;
-		for (Renderer * obj : renderers)
+		for (Renderer* obj : renderers)
 		{
 			auto renderer = ((Renderer*)obj);
 
@@ -1035,7 +1117,7 @@ public:
 	bool intersectTrace(Ray& ray) const
 	{
 		bool intersects = false;
-		for (Renderer * obj : renderers)
+		for (Renderer* obj : renderers)
 		{
 			auto renderer = ((Renderer*)obj);
 
@@ -1048,7 +1130,7 @@ public:
 	}
 
 
-	
+
 	void addRenderer(Renderer* r)
 	{
 		renderers.emplace_back(r);
@@ -1079,7 +1161,7 @@ public:
 	{
 		return ambientIntensity;
 	}
-	
+
 	//Consloe debugger
 	//#######################################################
 #pragma region Consloe Debugger
@@ -1167,10 +1249,10 @@ vec3 Material::calculateColor(HitInfo& hit)
 
 	RendererSystem* rendererSystem = RendererSystem_Instance;
 
-	vec3 out_color(0,0,0);
+	vec3 out_color(0, 0, 0);
 	//if(type == Diffuse)
-	out_color = (ka * rendererSystem->getAmbientLight()* rendererSystem->getAmbinetIntensity());
-	
+	out_color = (ka * rendererSystem->getAmbientLight() * rendererSystem->getAmbinetIntensity());
+
 	for (Light* light : rendererSystem->getLights())
 	{
 		vec3 target = light->getPos();
@@ -1182,37 +1264,37 @@ vec3 Material::calculateColor(HitInfo& hit)
 			vec3 halfVector = normalize(hit.ray.direction + shadowRay.direction);
 
 			vec3 kd_part(0, 0, 0);
-			 kd_part = kd * clamp(dot(shadowRay.direction, hit.normal),0.0f,1.0f);
+			kd_part = kd * clamp(dot(shadowRay.direction, hit.normal), 0.0f, 1.0f);
 
-			vec3 ks_part(0,0,0);
-			if(shiny > 0)
-			ks_part = ks * pow( clamp(dot(halfVector, hit.normal),0.0f,1.0f),shiny);
+			vec3 ks_part(0, 0, 0);
+			if (shiny > 0)
+				ks_part = ks * pow(clamp(dot(halfVector, hit.normal), 0.0f, 1.0f), shiny);
 
-			
+
 			//if(type == Diffuse)
-			out_color = out_color + light->getColor() * light->getIntensity() * ( kd_part + ks_part);
+			out_color = out_color + light->getColor() * light->getIntensity() * (kd_part + ks_part);
 		}
 	}
 
-	if(type == Mirror)
+	if (type == Mirror)
 	{
 		vec3 reflectionDir = reflect(hit.ray.direction, hit.normal);
 		Ray reflectionRay(hit.position + hit.normal * RAY_T_MIN, reflectionDir);
 		HitInfo reflectionHit(reflectionRay);
-		reflectionHit.hit_count = hit.hit_count+1;
-		if(rendererSystem->trace(reflectionHit))
+		reflectionHit.hit_count = hit.hit_count + 1;
+		if (rendererSystem->trace(reflectionHit))
 		{
-			out_color = out_color + reflectionHit.color *Fresnel_R(dot(hit.ray.direction, hit.normal), 1);
+			out_color = out_color + reflectionHit.color * Fresnel_R(dot(hit.ray.direction, hit.normal), 1);
 		}
 	}
 
-	if(out_color == vec3(0.0f,0.0f,0.0f))
+	if (out_color == vec3(0.0f, 0.0f, 0.0f))
 	{
 		printf("?? \n");
 	}
 
 	//out_color = hit.position;
-	
+
 	return out_color;
 }
 
@@ -1228,11 +1310,11 @@ class Engine
 
 	std::vector<RuntimeResource*> runtimeResources;
 public:
-	
+
 	Engine()
 	{
 		scene = new Scene();
-		
+
 		renderer = new RendererSystem(scene);
 		loadScene(scene);
 	}
@@ -1248,15 +1330,21 @@ public:
 		}
 	}
 
+	long frame = 0;
+	
 	void Tick()
 	{
-		
+		frame++;
+
+		float angle = frame * (M_PI*2 / 100);
+		scene->mainCam->setPos(vec3(sin(angle)*5,2.0f, cos(angle)*5));
+		scene->mainCam->lookAt(vec3(0, 0, 0));
 	}
 
 	void Render()
 	{
 		long timeStart = glutGet(GLUT_ELAPSED_TIME);
-		
+
 		renderer->renderScene();
 		renderer->display();
 
@@ -1283,7 +1371,7 @@ public:
 		return val;
 	}
 
-	
+
 	void loadScene(Scene* scene)
 	{
 		//Ceate the materials
@@ -1293,7 +1381,7 @@ public:
 
 		auto blue = CreateRuntimeResource<Material>(vec3(66 / 255.0f, 239 / 255.0f, 245 / 255.0f), 700);
 
-		
+
 		//Scene scene;
 		//RendererSystem renerer(&scene);
 		renderer->setAmbientLight(vec3(255 / 255.0f, 248 / 255.0f, 168 / 255.0f), 0.1);
@@ -1316,6 +1404,10 @@ public:
 		test2->setPos(vec3(2, 1, 10));
 		scene->addEntity(test2);
 
+		auto fancy_shape = CreateRuntimeResource<Hyperboloid>(0.001f);
+		auto test3 = new Renderer(fancy_shape, blue);
+		test3->setPos(vec3(-5, 1, 10));
+		scene->addEntity(test3);
 
 		auto pointLight = new Light(vec3(1, 1, 1), 0.5);
 		pointLight->setPos(vec3(2, 5, 2));
@@ -1411,7 +1503,7 @@ void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
 
 	engine = new Engine();
-	
+
 
 	//renerer.renderScene(target);
 
@@ -1450,5 +1542,6 @@ void onMouseMotion(int pX, int pY) {
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
+	engine->Tick();
 	glutPostRedisplay();
 }
