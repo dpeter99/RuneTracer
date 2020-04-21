@@ -64,6 +64,17 @@ inline float pow2(float n)
 	return n * n;
 }
 
+inline mat4 dot(const vec3 & P, const mat4& A)
+{
+	return mat4(
+		vec4(A.rows[0].x * P.x * P.x,	A.rows[0].y * P.x * P.y,	A.rows[0].z * P.x * P.z,	A.rows[0].w * P.x),
+		vec4(A.rows[1].x * P.y * P.x,	A.rows[1].y * P.y * P.y,	A.rows[1].z * P.y * P.z,	A.rows[1].w * P.y),
+		vec4(A.rows[2].x * P.z * P.x,	A.rows[2].y * P.z * P.y,	A.rows[2].z * P.z * P.z,	A.rows[2].w * P.z),
+		vec4(A.rows[3].x * P.x,		A.rows[3].y * P.y,		A.rows[3].z * P.z,		A.rows[3].w * 1.0f)
+	);
+}
+
+
 template<class T>
 constexpr const T& clamp(const T& v, const T& lo, const T& hi)
 {
@@ -551,6 +562,58 @@ public:
 	};
 };
 
+class Hyperboloid : public Shape
+{
+	SHObject_Base(Hyperboloid)
+
+		mat4 A;
+	
+
+public:
+	Hyperboloid(float k)
+	{
+		float a = +1;
+		float b = +1;
+		float c = -1;
+		float d = -k;
+		
+		A.rows[0].x = a;
+		A.rows[1].y = b;
+		A.rows[2].z = c;
+		A.rows[3].w = d;
+	}
+
+
+	bool calculateHit(HitInfo& hitInfo) override
+	{
+		
+		float a = dot(hitInfo.ray.direction,A);
+		float b = pow2(hitInfo.position.y) / b2;
+		float c = pow2(hitInfo.position.z) / c2;
+		
+		float r = xa + yb - zc;
+
+		if(r != 1)
+		{
+			return false;
+		}
+
+		// Finish populating intersection
+		hitInfo.shape = this;
+		//shitInfo.color = vec3(1,0,0);
+		hitInfo.position = hitInfo.ray.getPoint(hitInfo.t);
+		hitInfo.depth = hitInfo.t;
+		hitInfo.normal = hitInfo.position;
+
+		return true;
+	};
+
+	bool doesHit(const Ray& ray) override
+	{
+		return true;
+	};
+};
+
 #pragma endregion
 
 
@@ -996,7 +1059,7 @@ public:
 		lights.emplace_back(r);
 	}
 
-	std::vector<Light*> getLights()
+	std::vector<Light*>const& getLights()
 	{
 		return lights;
 	}
@@ -1108,9 +1171,7 @@ vec3 Material::calculateColor(HitInfo& hit)
 	//if(type == Diffuse)
 	out_color = (ka * rendererSystem->getAmbientLight()* rendererSystem->getAmbinetIntensity());
 	
-	
-	std::vector<Light*> lights = rendererSystem->getLights();
-	for (Light* light : lights)
+	for (Light* light : rendererSystem->getLights())
 	{
 		vec3 target = light->getPos();
 		Ray shadowRay = Ray(hit.position + hit.normal * RAY_T_MIN, normalize(target - hit.position));
