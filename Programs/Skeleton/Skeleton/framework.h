@@ -23,6 +23,8 @@
 #include <GL/freeglut.h>	// must be downloaded unless you have an Apple
 #endif
 
+#define LOCAL
+
 // Resolution of screen
 const unsigned int windowWidth = 1000, windowHeight = 1000;
 

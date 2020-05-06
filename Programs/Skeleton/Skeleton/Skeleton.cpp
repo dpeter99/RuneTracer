@@ -607,11 +607,34 @@ public:
 		discr = sqrtf(discr);
 
 		vec2 res;
-		
+
 		res.x = (-b - discr) / 2 / a;
 		res.y = (-b + discr) / 2 / a;
 
 		return res;
+	}
+
+	vec3 calcNormal(vec3 pos)
+	{
+		float x = 
+			(A[0].x * 2 * pos.x) + (A[0].y * pos.y) + (A[0].z * pos.z) + (A[0].w * 1.0f) +
+			(A[1].x * pos.y) +
+			(A[2].x * pos.z) +
+			(A[3].x * 1.0f);
+
+		float y =
+							   (A[0].y * pos.x) +
+			(A[1].x * pos.x) + (A[1].y * 2 * pos.y) + (A[1].z * pos.z) + (A[1].w * 1.0f) +
+							   (A[2].y * pos.z) +
+							   (A[3].y * 1.0f);
+
+		float z = 
+												  (A[0].z * pos.x) +
+												  (A[1].z * pos.y) +
+			(A[2].x * pos.x) + (A[2].y * pos.y) + (A[2].z * 2 * pos.z) + (A[2].w * 1.0f) +
+												  (A[3].z * 1.0f);
+
+		return vec3(x, y, z);
 	}
 
 	bool calculateHit(HitInfo& hitInfo) override
@@ -620,7 +643,7 @@ public:
 		auto C = hitInfo.ray.origin;
 
 		auto res = calculteT(D, C);
-		
+
 		float t;
 		// First check if close intersection is valid
 		if (res.x > RAY_T_MIN && res.x < hitInfo.t)
@@ -638,22 +661,17 @@ public:
 		}
 
 		vec3 point = hitInfo.ray.getPoint(hitInfo.t);
-		
-		if(point.x > 3)
-		{
-			return false;
-		}
-		else
-		{
-			hitInfo.t = t;
-		}
-		
+
+
+		hitInfo.t = t;
+
+
 		// Finish populating intersection
 		hitInfo.shape = this;
 		//shitInfo.color = vec3(1,0,0);
 		hitInfo.position = hitInfo.ray.getPoint(hitInfo.t);
 		hitInfo.depth = hitInfo.t;
-		hitInfo.normal = hitInfo.position;
+		hitInfo.normal = normalize(calcNormal( hitInfo.position));
 
 		return true;
 	};
@@ -849,10 +867,10 @@ public:
 	void lookAt(vec3 target)
 	{
 		forward = normalize(target - pos);
-		right = normalize(cross(forward, CoordinateSystem::Up ));
+		right = normalize(cross(forward, CoordinateSystem::Up));
 		up = cross(right, forward);
 	}
-	
+
 	Ray makeRay(vec2 point) const
 	{
 		vec3 direction =
@@ -1330,15 +1348,18 @@ public:
 		}
 	}
 
-	long frame = 0;
-	
+	long frame = 80;
+
 	void Tick()
 	{
 		frame++;
 
-		float angle = frame * (M_PI*2 / 100);
-		scene->mainCam->setPos(vec3(sin(angle)*5,2.0f, cos(angle)*5));
-		scene->mainCam->lookAt(vec3(0, 0, 0));
+		float angle = frame * (M_PI * 2 / 50);
+		scene->mainCam->setPos(vec3(sin(angle) * 10, 2.0f, cos(angle) * 10));
+		scene->mainCam->lookAt(vec3(0, 2, 0));
+
+		vec3 p = scene->mainCam->getPos();
+		//printf("%2.2f %2.2f %2.2f \n", p.x, p.y, p.z);
 	}
 
 	void Render()
@@ -1390,23 +1411,23 @@ public:
 		auto ground = new Renderer(plane, floor);
 		scene->addEntity(ground);
 
-		auto side_plane = CreateRuntimeResource<Plane>(vec3(6, 0, 0), -CoordinateSystem::Right);
+		auto side_plane = CreateRuntimeResource<Plane>(vec3(12, 0, 0), -CoordinateSystem::Right);
 		auto side1 = new Renderer(side_plane, floor);
 		scene->addEntity(side1);
 
 		auto sphere = CreateRuntimeResource<Sphere>(1);
 
 		auto test = new Renderer(sphere, red);
-		test->setPos(vec3(0.5, 2.3, 13));
+		test->setPos(vec3(0.5, 2.3, 2));
 		scene->addEntity(test);
 
 		auto test2 = new Renderer(sphere, blue);
-		test2->setPos(vec3(2, 1, 10));
+		test2->setPos(vec3(0, 1, 0));
 		scene->addEntity(test2);
 
 		auto fancy_shape = CreateRuntimeResource<Hyperboloid>(0.001f);
 		auto test3 = new Renderer(fancy_shape, blue);
-		test3->setPos(vec3(-5, 1, 10));
+		test3->setPos(vec3(-5, 1, 0));
 		scene->addEntity(test3);
 
 		auto pointLight = new Light(vec3(1, 1, 1), 0.5);
@@ -1415,8 +1436,8 @@ public:
 
 
 		Camera* cam = new Camera();
-		cam->setPos(vec3(0, 2, -5));
-		cam->setParameters(25.0f * M_PI / 180.0f,
+		cam->setPos(vec3(0, 2, 10));
+		cam->setParameters(40.0f * M_PI / 180.0f,
 			(float)windowWidth / (float)windowHeight);
 		scene->addEntity(cam);
 
@@ -1542,6 +1563,10 @@ void onMouseMotion(int pX, int pY) {
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
+#ifdef LOCAL
 	engine->Tick();
 	glutPostRedisplay();
+#endif // 
+
+	
 }
